@@ -314,26 +314,15 @@ func TestAccServicePrincipal_fromApplicationTemplate(t *testing.T) {
 	})
 }
 
-func TestAccServicePrincipal_deprecatedId(t *testing.T) {
-	data := acceptance.BuildTestData(t, "azuread_service_principal", "test")
-	r := ServicePrincipalResource{}
-
-	data.ResourceTest(t, r, []acceptance.TestStep{
-		{
-			Config: r.deprecatedId(data),
-			Check: acceptance.ComposeTestCheckFunc(
-				check.That(data.ResourceName).ExistsInAzure(r),
-			),
-		},
-		data.ImportStep("use_existing"),
-	})
-}
-
 func (r ServicePrincipalResource) Exists(ctx context.Context, clients *clients.Client, state *terraform.InstanceState) (*bool, error) {
 	client := clients.ServicePrincipals.ServicePrincipalClient
-	id := stable.NewServicePrincipalID(state.ID)
 
-	resp, err := client.GetServicePrincipal(ctx, id, serviceprincipal.DefaultGetServicePrincipalOperationOptions())
+	id, err := stable.ParseServicePrincipalID(state.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.GetServicePrincipal(ctx, *id, serviceprincipal.DefaultGetServicePrincipalOperationOptions())
 	if err != nil {
 		if response.WasNotFound(resp.HttpResponse) {
 			return pointer.To(false), nil
@@ -704,20 +693,6 @@ resource "azuread_service_principal" "testB" {
 
 resource "azuread_service_principal" "testC" {
   client_id = azuread_application.testC.client_id
-}
-`, data.RandomInteger)
-}
-
-func (ServicePrincipalResource) deprecatedId(data acceptance.TestData) string {
-	return fmt.Sprintf(`
-provider "azuread" {}
-
-resource "azuread_application" "test" {
-  display_name = "acctestServicePrincipal-%[1]d"
-}
-
-resource "azuread_service_principal" "test" {
-  application_id = azuread_application.test.application_id
 }
 `, data.RandomInteger)
 }

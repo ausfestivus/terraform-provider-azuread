@@ -31,7 +31,6 @@ func TestAccApplication_basic(t *testing.T) {
 			Config: r.basic(data),
 			Check: acceptance.ComposeTestCheckFunc(
 				check.That(data.ResourceName).ExistsInAzure(r),
-				check.That(data.ResourceName).Key("application_id").Exists(),
 				check.That(data.ResourceName).Key("client_id").Exists(),
 				check.That(data.ResourceName).Key("object_id").Exists(),
 				check.That(data.ResourceName).Key("password.#").HasValue("0"),
@@ -51,7 +50,6 @@ func TestAccApplication_basicFromTemplate(t *testing.T) {
 			Config: r.basicFromTemplate(data),
 			Check: acceptance.ComposeTestCheckFunc(
 				check.That(data.ResourceName).ExistsInAzure(r),
-				check.That(data.ResourceName).Key("application_id").Exists(),
 				check.That(data.ResourceName).Key("client_id").Exists(),
 				check.That(data.ResourceName).Key("object_id").Exists(),
 				check.That(data.ResourceName).Key("display_name").HasValue(fmt.Sprintf("acctest-APP-%d", data.RandomInteger)),
@@ -71,7 +69,6 @@ func TestAccApplication_complete(t *testing.T) {
 			Config: r.complete(data),
 			Check: acceptance.ComposeTestCheckFunc(
 				check.That(data.ResourceName).ExistsInAzure(r),
-				check.That(data.ResourceName).Key("application_id").Exists(),
 				check.That(data.ResourceName).Key("client_id").Exists(),
 				check.That(data.ResourceName).Key("object_id").Exists(),
 			),
@@ -89,7 +86,6 @@ func TestAccApplication_completeFromTemplate(t *testing.T) {
 			Config: r.completeFromTemplate(data),
 			Check: acceptance.ComposeTestCheckFunc(
 				check.That(data.ResourceName).ExistsInAzure(r),
-				check.That(data.ResourceName).Key("application_id").Exists(),
 				check.That(data.ResourceName).Key("client_id").Exists(),
 				check.That(data.ResourceName).Key("object_id").Exists(),
 				check.That(data.ResourceName).Key("template_id").HasValue(testApplicationTemplateId),
@@ -110,7 +106,6 @@ func TestAccApplication_update(t *testing.T) {
 			Config: r.basic(data),
 			Check: acceptance.ComposeTestCheckFunc(
 				check.That(data.ResourceName).ExistsInAzure(r),
-				check.That(data.ResourceName).Key("application_id").Exists(),
 				check.That(data.ResourceName).Key("client_id").Exists(),
 				check.That(data.ResourceName).Key("object_id").Exists(),
 			),
@@ -120,7 +115,6 @@ func TestAccApplication_update(t *testing.T) {
 			Config: r.complete(data),
 			Check: acceptance.ComposeTestCheckFunc(
 				check.That(data.ResourceName).ExistsInAzure(r),
-				check.That(data.ResourceName).Key("application_id").Exists(),
 				check.That(data.ResourceName).Key("client_id").Exists(),
 				check.That(data.ResourceName).Key("object_id").Exists(),
 			),
@@ -130,7 +124,6 @@ func TestAccApplication_update(t *testing.T) {
 			Config: r.basic(data),
 			Check: acceptance.ComposeTestCheckFunc(
 				check.That(data.ResourceName).ExistsInAzure(r),
-				check.That(data.ResourceName).Key("application_id").Exists(),
 				check.That(data.ResourceName).Key("client_id").Exists(),
 				check.That(data.ResourceName).Key("object_id").Exists(),
 			),
@@ -292,6 +285,8 @@ func TestAccApplication_oauth2PermissionScopes(t *testing.T) {
 		data.UUID(),
 	}
 
+	// Note: ImportSteps missing here due to inconsistencies with SDKv2 handling of sets
+
 	data.ResourceTest(t, r, []acceptance.TestStep{
 		{
 			Config: r.basic(data),
@@ -301,7 +296,6 @@ func TestAccApplication_oauth2PermissionScopes(t *testing.T) {
 				check.That(data.ResourceName).Key("oauth2_permission_scope_ids.%").HasValue("0"),
 			),
 		},
-		data.ImportStep(),
 		{
 			Config: r.oauth2PermissionScopes(data, scopeIDs),
 			Check: acceptance.ComposeTestCheckFunc(
@@ -310,7 +304,6 @@ func TestAccApplication_oauth2PermissionScopes(t *testing.T) {
 				check.That(data.ResourceName).Key("oauth2_permission_scope_ids.%").HasValue("2"),
 			),
 		},
-		data.ImportStep(),
 		{
 			Config: r.oauth2PermissionScopesUpdate(data, scopeIDs),
 			Check: acceptance.ComposeTestCheckFunc(
@@ -319,7 +312,6 @@ func TestAccApplication_oauth2PermissionScopes(t *testing.T) {
 				check.That(data.ResourceName).Key("oauth2_permission_scope_ids.%").HasValue("3"),
 			),
 		},
-		data.ImportStep(),
 		{
 			Config: r.oauth2PermissionScopes(data, scopeIDs),
 			Check: acceptance.ComposeTestCheckFunc(
@@ -328,7 +320,6 @@ func TestAccApplication_oauth2PermissionScopes(t *testing.T) {
 				check.That(data.ResourceName).Key("oauth2_permission_scope_ids.%").HasValue("2"),
 			),
 		},
-		data.ImportStep(),
 		{
 			Config: r.basic(data),
 			Check: acceptance.ComposeTestCheckFunc(
@@ -337,7 +328,6 @@ func TestAccApplication_oauth2PermissionScopes(t *testing.T) {
 				check.That(data.ResourceName).Key("oauth2_permission_scope_ids.%").HasValue("0"),
 			),
 		},
-		data.ImportStep(),
 	})
 }
 

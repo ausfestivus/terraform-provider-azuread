@@ -1,3 +1,30 @@
+## 3.0.2 (October 04, 2024)
+
+BUG FIXES:
+
+* `azuread_group` - Fix crash and memory leak  ([#1518](https://github.com/hashicorp/terraform-provider-azuread/issues/1518))
+
+## 3.0.1 (September 27, 2024)
+
+BUG FIXES:
+
+* `data.azuread_group` - fix ID parsing bugs and some crashes ([#1499](https://github.com/hashicorp/terraform-provider-azuread/issues/1499))
+* `azuread_conditional_access_policy` - fix a parsing bug for `authentication_strength_policy_id` ([#1499](https://github.com/hashicorp/terraform-provider-azuread/issues/1499))
+* `azuread_service_principal_certificate` - fix a parsing bug for `service_principal_id` ([#1499](https://github.com/hashicorp/terraform-provider-azuread/issues/1499))
+* `azuread_service_principal_claims_mapping_policy_assignment` - fix a parsing bug for `service_principal_id` ([#1499](https://github.com/hashicorp/terraform-provider-azuread/issues/1499))
+* `azuread_service_principal_password` - fix a parsing bug for `service_principal_id` ([#1499](https://github.com/hashicorp/terraform-provider-azuread/issues/1499))
+* `azuread_service_principal_token_signing_certificate` - fix a parsing bug for `service_principal_id` ([#1499](https://github.com/hashicorp/terraform-provider-azuread/issues/1499))
+* `azuread_synchronization_job` - fix a parsing bug for `service_principal_id` ([#1499](https://github.com/hashicorp/terraform-provider-azuread/issues/1499))
+* `azuread_synchronization_job_provision_on_demand` - fix parsing bugs for `service_principal_id` and `synchronization_job_id` ([#1499](https://github.com/hashicorp/terraform-provider-azuread/issues/1499))
+* `azuread_synchronization_secret` - fix a parsing bug for `service_principal_id` ([#1499](https://github.com/hashicorp/terraform-provider-azuread/issues/1499))
+
+## 3.0.0 (September 27, 2024)
+
+NOTES:
+
+* **Major Version**: Version 3.0 of the AzureAD Provider is a major version. Some behaviors have changed and some deprecated fields/resources have been removed. Please refer to the [3.0 upgrade guide](https://registry.terraform.io/providers/hashicorp/azuread/latest/docs/guides/3.0-upgrade-guide) for more information.
+* When upgrading to v3.0 of the AzureAD Provider, we recommend upgrading to the latest version of Terraform Core ([which can be found here](https://www.terraform.io/downloads)).
+
 ## 2.53.1 (June 28, 2024)
 
 BUG FIXES:

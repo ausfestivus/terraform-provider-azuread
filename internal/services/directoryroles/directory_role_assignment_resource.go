@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-provider-azuread/internal/helpers/tf"
 	"github.com/hashicorp/terraform-provider-azuread/internal/helpers/tf/pluginsdk"
 	"github.com/hashicorp/terraform-provider-azuread/internal/helpers/tf/validation"
+	"github.com/hashicorp/terraform-provider-azuread/internal/services/directoryroles/migrations"
 )
 
 func directoryRoleAssignmentResource() *pluginsdk.Resource {
@@ -33,11 +34,24 @@ func directoryRoleAssignmentResource() *pluginsdk.Resource {
 		},
 
 		Importer: pluginsdk.ImporterValidatingResourceId(func(id string) error {
-			if id == "" {
-				return errors.New("id was empty")
+			if _, errs := stable.ValidateRoleManagementDirectoryRoleAssignmentID(id, "id"); len(errs) > 0 {
+				out := ""
+				for _, err := range errs {
+					out += err.Error()
+				}
+				return fmt.Errorf(out)
 			}
 			return nil
 		}),
+
+		SchemaVersion: 1,
+		StateUpgraders: []pluginsdk.StateUpgrader{
+			{
+				Type:    migrations.ResourceDirectoryRoleAssignmentInstanceResourceV0().CoreConfigSchema().ImpliedType(),
+				Upgrade: migrations.ResourceDirectoryRoleAssignmentInstanceStateUpgradeV0,
+				Version: 0,
+			},
+		},
 
 		Schema: map[string]*pluginsdk.Schema{
 			"role_id": {
@@ -62,18 +76,7 @@ func directoryRoleAssignmentResource() *pluginsdk.Resource {
 				Optional:      true,
 				Computed:      true,
 				ForceNew:      true,
-				ConflictsWith: []string{"app_scope_object_id", "directory_scope_id", "directory_scope_object_id"},
-				ValidateFunc:  validation.StringIsNotEmpty,
-			},
-
-			"app_scope_object_id": {
-				Deprecated:    "`app_scope_object_id` has been renamed to `app_scope_id` and will be removed in version 3.0 or the AzureAD Provider",
-				Description:   "Identifier of the app-specific scope when the assignment scope is app-specific",
-				Type:          pluginsdk.TypeString,
-				Optional:      true,
-				Computed:      true,
-				ForceNew:      true,
-				ConflictsWith: []string{"app_scope_id", "directory_scope_id", "directory_scope_object_id"},
+				ConflictsWith: []string{"directory_scope_id"},
 				ValidateFunc:  validation.StringIsNotEmpty,
 			},
 
@@ -83,17 +86,7 @@ func directoryRoleAssignmentResource() *pluginsdk.Resource {
 				Optional:      true,
 				Computed:      true,
 				ForceNew:      true,
-				ConflictsWith: []string{"app_scope_id", "app_scope_object_id", "directory_scope_object_id"},
-				ValidateFunc:  validation.StringIsNotEmpty,
-			},
-
-			"directory_scope_object_id": {
-				Description:   "Identifier of the directory object representing the scope of the assignment",
-				Type:          pluginsdk.TypeString,
-				Optional:      true,
-				Computed:      true,
-				ForceNew:      true,
-				ConflictsWith: []string{"app_scope_id", "app_scope_object_id", "directory_scope_id"},
+				ConflictsWith: []string{"app_scope_id"},
 				ValidateFunc:  validation.StringIsNotEmpty,
 			},
 		},
@@ -111,19 +104,8 @@ func directoryRoleAssignmentResourceCreate(ctx context.Context, d *pluginsdk.Res
 		RoleDefinitionId: nullable.Value(roleId),
 	}
 
-	var appScopeId, directoryScopeId string
-
-	if v, ok := d.GetOk("app_scope_id"); ok {
-		appScopeId = v.(string)
-	} else if v, ok = d.GetOk("app_scope_object_id"); ok {
-		appScopeId = v.(string)
-	}
-
-	if v, ok := d.GetOk("directory_scope_id"); ok {
-		directoryScopeId = v.(string)
-	} else if v, ok = d.GetOk("directory_scope_object_id"); ok {
-		directoryScopeId = v.(string)
-	}
+	appScopeId := d.Get("app_scope_id").(string)
+	directoryScopeId := d.Get("directory_scope_id").(string)
 
 	switch {
 	case appScopeId != "":
@@ -145,7 +127,7 @@ func directoryRoleAssignmentResourceCreate(ctx context.Context, d *pluginsdk.Res
 	}
 
 	id := stable.NewRoleManagementDirectoryRoleAssignmentID(*assignment.Id)
-	d.SetId(id.UnifiedRoleAssignmentId)
+	d.SetId(id.ID())
 
 	// Wait for role assignment to reflect
 	deadline, ok := ctx.Deadline()
@@ -179,9 +161,13 @@ func directoryRoleAssignmentResourceCreate(ctx context.Context, d *pluginsdk.Res
 
 func directoryRoleAssignmentResourceRead(ctx context.Context, d *pluginsdk.ResourceData, meta interface{}) pluginsdk.Diagnostics {
 	client := meta.(*clients.Client).DirectoryRoles.DirectoryRoleAssignmentClient
-	id := stable.NewRoleManagementDirectoryRoleAssignmentID(d.Id())
 
-	resp, err := client.GetDirectoryRoleAssignment(ctx, id, directoryroleassignment.DefaultGetDirectoryRoleAssignmentOperationOptions())
+	id, err := stable.ParseRoleManagementDirectoryRoleAssignmentID(d.Id())
+	if err != nil {
+		return tf.ErrorDiagPathF(err, "id", "Parsing ID")
+	}
+
+	resp, err := client.GetDirectoryRoleAssignment(ctx, *id, directoryroleassignment.DefaultGetDirectoryRoleAssignmentOperationOptions())
 	if err != nil {
 		if response.WasNotFound(resp.HttpResponse) {
 			log.Printf("[DEBUG] %s was not found - removing from state", id)
@@ -197,9 +183,7 @@ func directoryRoleAssignmentResourceRead(ctx context.Context, d *pluginsdk.Resou
 	}
 
 	tf.Set(d, "app_scope_id", assignment.AppScopeId.GetOrZero())
-	tf.Set(d, "app_scope_object_id", assignment.AppScopeId.GetOrZero())
 	tf.Set(d, "directory_scope_id", assignment.DirectoryScopeId.GetOrZero())
-	tf.Set(d, "directory_scope_object_id", assignment.DirectoryScopeId.GetOrZero())
 	tf.Set(d, "principal_object_id", assignment.PrincipalId.GetOrZero())
 	tf.Set(d, "role_id", assignment.RoleDefinitionId.GetOrZero())
 
@@ -208,9 +192,13 @@ func directoryRoleAssignmentResourceRead(ctx context.Context, d *pluginsdk.Resou
 
 func directoryRoleAssignmentResourceDelete(ctx context.Context, d *pluginsdk.ResourceData, meta interface{}) pluginsdk.Diagnostics {
 	client := meta.(*clients.Client).DirectoryRoles.DirectoryRoleAssignmentClient
-	id := stable.NewRoleManagementDirectoryRoleAssignmentID(d.Id())
 
-	if _, err := client.DeleteDirectoryRoleAssignment(ctx, id, directoryroleassignment.DefaultDeleteDirectoryRoleAssignmentOperationOptions()); err != nil {
+	id, err := stable.ParseRoleManagementDirectoryRoleAssignmentID(d.Id())
+	if err != nil {
+		return tf.ErrorDiagPathF(err, "id", "Parsing ID")
+	}
+
+	if _, err := client.DeleteDirectoryRoleAssignment(ctx, *id, directoryroleassignment.DefaultDeleteDirectoryRoleAssignmentOperationOptions()); err != nil {
 		return tf.ErrorDiagF(err, "Deleting %s", id)
 	}
 

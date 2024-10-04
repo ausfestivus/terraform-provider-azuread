@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform-provider-azuread/internal/acceptance"
 	"github.com/hashicorp/terraform-provider-azuread/internal/acceptance/check"
 	"github.com/hashicorp/terraform-provider-azuread/internal/clients"
-	"github.com/hashicorp/terraform-provider-azuread/internal/services/synchronization/parse"
 )
 
 type SynchronizationJobResource struct{}
@@ -67,14 +66,12 @@ func testAccSynchronizationJob_disabled(t *testing.T) {
 func (r SynchronizationJobResource) Exists(ctx context.Context, clients *clients.Client, state *terraform.InstanceState) (*bool, error) {
 	client := clients.ServicePrincipals.SynchronizationJobClient
 
-	resourceId, err := parse.SynchronizationJobID(state.ID)
+	id, err := stable.ParseServicePrincipalIdSynchronizationJobID(state.ID)
 	if err != nil {
 		return nil, fmt.Errorf("parsing synchronization job ID: %v", err)
 	}
 
-	id := stable.NewServicePrincipalIdSynchronizationJobID(resourceId.ServicePrincipalId, resourceId.JobId)
-
-	resp, err := client.GetSynchronizationJob(ctx, id, synchronizationjob.DefaultGetSynchronizationJobOperationOptions())
+	resp, err := client.GetSynchronizationJob(ctx, *id, synchronizationjob.DefaultGetSynchronizationJobOperationOptions())
 	if err != nil {
 		if response.WasNotFound(resp.HttpResponse) {
 			return pointer.To(false), nil
@@ -99,6 +96,10 @@ resource "azuread_application_from_template" "test" {
   display_name = "acctestSynchronizationJob-%[1]d"
   template_id  = data.azuread_application_template.test.template_id
 }
+
+data "azuread_service_principal" "test" {
+  object_id = azuread_application_from_template.test.service_principal_object_id
+}
 `, data.RandomInteger)
 }
 
@@ -107,7 +108,7 @@ func (r SynchronizationJobResource) basic(data acceptance.TestData) string {
 %[1]s
 
 resource "azuread_synchronization_job" "test" {
-  service_principal_id = azuread_application_from_template.test.service_principal_object_id
+  service_principal_id = data.azuread_service_principal.test.id
   template_id          = "dataBricks"
 }
 `, r.template(data))
@@ -118,7 +119,7 @@ func (r SynchronizationJobResource) disabled(data acceptance.TestData) string {
 %[1]s
 
 resource "azuread_synchronization_job" "test" {
-  service_principal_id = azuread_application_from_template.test.service_principal_object_id
+  service_principal_id = data.azuread_service_principal.test.id
   template_id          = "dataBricks"
   enabled              = false
 }

@@ -555,9 +555,13 @@ func TestAccGroup_writebackUnified(t *testing.T) {
 
 func (r GroupResource) Exists(ctx context.Context, clients *clients.Client, state *terraform.InstanceState) (*bool, error) {
 	client := clients.Groups.GroupClientBeta
-	id := beta.NewGroupID(state.ID)
 
-	resp, err := client.GetGroup(ctx, id, groupBeta.DefaultGetGroupOperationOptions())
+	id, err := beta.ParseGroupID(state.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.GetGroup(ctx, *id, groupBeta.DefaultGetGroupOperationOptions())
 	if err != nil {
 		if response.WasNotFound(resp.HttpResponse) {
 			return pointer.To(false), nil
@@ -578,7 +582,7 @@ resource "azuread_application" "test" {
 }
 
 resource "azuread_service_principal" "test" {
-  application_id = azuread_application.test.application_id
+  client_id = azuread_application.test.client_id
 }
 
 resource "azuread_user" "test" {
@@ -840,7 +844,7 @@ resource "azuread_application" "test" {
 }
 
 resource "azuread_service_principal" "test" {
-  application_id = azuread_application.test.application_id
+  client_id = azuread_application.test.client_id
 }
 
 resource "azuread_group" "test" {
@@ -913,7 +917,7 @@ resource "azuread_application" "test" {
 }
 
 resource "azuread_service_principal" "test" {
-  application_id = azuread_application.test.application_id
+  client_id = azuread_application.test.client_id
 }
 
 resource "azuread_group" "test" {
@@ -1016,8 +1020,8 @@ resource "azuread_application" "test" {
 }
 
 resource "azuread_service_principal" "test" {
-  count          = 27
-  application_id = azuread_application.test[count.index].application_id
+  count     = 27
+  client_id = azuread_application.test[count.index].client_id
 }
 
 resource "azuread_user" "test" {

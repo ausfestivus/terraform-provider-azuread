@@ -17,8 +17,7 @@ import (
 	"github.com/hashicorp/terraform-provider-azuread/internal/helpers/consistency"
 	"github.com/hashicorp/terraform-provider-azuread/internal/helpers/tf"
 	"github.com/hashicorp/terraform-provider-azuread/internal/helpers/tf/pluginsdk"
-	"github.com/hashicorp/terraform-provider-azuread/internal/helpers/tf/validation"
-	"github.com/hashicorp/terraform-provider-azuread/internal/services/synchronization/parse"
+	"github.com/hashicorp/terraform-provider-azuread/internal/services/synchronization/migrations"
 )
 
 func synchronizationSecretResource() *pluginsdk.Resource {
@@ -35,13 +34,33 @@ func synchronizationSecretResource() *pluginsdk.Resource {
 			Delete: pluginsdk.DefaultTimeout(5 * time.Minute),
 		},
 
+		Importer: pluginsdk.ImporterValidatingResourceId(func(id string) error {
+			if _, errs := stable.ValidateServicePrincipalID(id, "id"); len(errs) > 0 {
+				out := ""
+				for _, err := range errs {
+					out += err.Error()
+				}
+				return fmt.Errorf(out)
+			}
+			return nil
+		}),
+
+		SchemaVersion: 1,
+		StateUpgraders: []pluginsdk.StateUpgrader{
+			{
+				Type:    migrations.ResourceSynchronizationSecretInstanceResourceV0().CoreConfigSchema().ImpliedType(),
+				Upgrade: migrations.ResourceSynchronizationSecretInstanceStateUpgradeV0,
+				Version: 0,
+			},
+		},
+
 		Schema: map[string]*pluginsdk.Schema{
 			"service_principal_id": {
 				Description:  "The object ID of the service principal for which this synchronization secret should be created",
 				Type:         pluginsdk.TypeString,
 				Required:     true,
 				ForceNew:     true,
-				ValidateFunc: validation.IsUUID,
+				ValidateFunc: stable.ValidateServicePrincipalID,
 			},
 
 			"credential": {
@@ -70,22 +89,25 @@ func synchronizationSecretResource() *pluginsdk.Resource {
 func synchronizationSecretResourceCreate(ctx context.Context, d *pluginsdk.ResourceData, meta interface{}) pluginsdk.Diagnostics {
 	client := meta.(*clients.Client).Synchronization.SynchronizationSecretClient
 
-	servicePrincipalId := stable.NewServicePrincipalID(d.Get("service_principal_id").(string))
+	id, err := stable.ParseServicePrincipalID(d.Get("service_principal_id").(string))
+	if err != nil {
+		return tf.ErrorDiagPathF(err, "service_principal_id", "Parsing `service_principal_id`")
+	}
 
-	tf.LockByName(servicePrincipalResourceName, servicePrincipalId.ServicePrincipalId)
-	defer tf.UnlockByName(servicePrincipalResourceName, servicePrincipalId.ServicePrincipalId)
+	tf.LockByName(servicePrincipalResourceName, id.ServicePrincipalId)
+	defer tf.UnlockByName(servicePrincipalResourceName, id.ServicePrincipalId)
 
 	synchronizationSecrets := synchronizationsecret.SetSynchronizationSecretRequest{
 		Value: expandSynchronizationSecretKeyStringValuePair(d.Get("credential").([]interface{})),
 	}
 
-	if _, err := client.SetSynchronizationSecret(ctx, servicePrincipalId, synchronizationSecrets, synchronizationsecret.SetSynchronizationSecretOperationOptions{RetryFunc: synchronizationRetryFunc()}); err != nil {
-		return tf.ErrorDiagF(err, "Creating synchronization secret for %s", servicePrincipalId)
+	if _, err := client.SetSynchronizationSecret(ctx, *id, synchronizationSecrets, synchronizationsecret.SetSynchronizationSecretOperationOptions{RetryFunc: synchronizationRetryFunc()}); err != nil {
+		return tf.ErrorDiagF(err, "Creating synchronization secret for %s", id)
 	}
 
 	// Wait for the secret to appear
 	if err := consistency.WaitForUpdate(ctx, func(ctx context.Context) (*bool, error) {
-		resp, err := client.ListSynchronizationSecrets(ctx, servicePrincipalId, synchronizationsecret.ListSynchronizationSecretsOperationOptions{RetryFunc: synchronizationRetryFunc()})
+		resp, err := client.ListSynchronizationSecrets(ctx, *id, synchronizationsecret.ListSynchronizationSecretsOperationOptions{RetryFunc: synchronizationRetryFunc()})
 		if err != nil {
 			return pointer.To(false), fmt.Errorf("retrieving synchronization secret")
 		}
@@ -98,10 +120,10 @@ func synchronizationSecretResourceCreate(ctx context.Context, d *pluginsdk.Resou
 		}
 		return pointer.To(false), nil
 	}); err != nil {
-		return tf.ErrorDiagF(err, "Waiting for synchronization secrets for %s", servicePrincipalId)
+		return tf.ErrorDiagF(err, "Waiting for synchronization secrets for %s", id)
 	}
 
-	d.SetId(parse.NewSynchronizationSecretID(servicePrincipalId.ServicePrincipalId).String())
+	d.SetId(id.ID())
 	tf.Set(d, "credential", flattenSynchronizationSecretKeyStringValuePair(synchronizationSecrets.Value, nil))
 
 	return synchronizationSecretResourceRead(ctx, d, meta)
@@ -110,27 +132,25 @@ func synchronizationSecretResourceCreate(ctx context.Context, d *pluginsdk.Resou
 func synchronizationSecretResourceUpdate(ctx context.Context, d *pluginsdk.ResourceData, meta interface{}) pluginsdk.Diagnostics {
 	client := meta.(*clients.Client).Synchronization.SynchronizationSecretClient
 
-	id, err := parse.SynchronizationSecretID(d.Id())
+	id, err := stable.ParseServicePrincipalID(d.Id())
 	if err != nil {
 		return tf.ErrorDiagPathF(err, "id", "Parsing synchronization secret ID %q", d.Id())
 	}
 
-	servicePrincipalId := stable.NewServicePrincipalID(id.ServicePrincipalId)
-
-	tf.LockByName(servicePrincipalResourceName, servicePrincipalId.ServicePrincipalId)
-	defer tf.UnlockByName(servicePrincipalResourceName, servicePrincipalId.ServicePrincipalId)
+	tf.LockByName(servicePrincipalResourceName, id.ServicePrincipalId)
+	defer tf.UnlockByName(servicePrincipalResourceName, id.ServicePrincipalId)
 
 	synchronizationSecrets := synchronizationsecret.SetSynchronizationSecretRequest{
 		Value: expandSynchronizationSecretKeyStringValuePair(d.Get("credential").([]interface{})),
 	}
 
-	if _, err = client.SetSynchronizationSecret(ctx, servicePrincipalId, synchronizationSecrets, synchronizationsecret.SetSynchronizationSecretOperationOptions{RetryFunc: synchronizationRetryFunc()}); err != nil {
-		return tf.ErrorDiagF(err, "Updating synchronization secret for %s", servicePrincipalId)
+	if _, err = client.SetSynchronizationSecret(ctx, *id, synchronizationSecrets, synchronizationsecret.SetSynchronizationSecretOperationOptions{RetryFunc: synchronizationRetryFunc()}); err != nil {
+		return tf.ErrorDiagF(err, "Updating synchronization secret for %s", id)
 	}
 
 	// Wait for the secret to update
 	if err = consistency.WaitForUpdate(ctx, func(ctx context.Context) (*bool, error) {
-		resp, err := client.ListSynchronizationSecrets(ctx, servicePrincipalId, synchronizationsecret.ListSynchronizationSecretsOperationOptions{RetryFunc: synchronizationRetryFunc()})
+		resp, err := client.ListSynchronizationSecrets(ctx, *id, synchronizationsecret.ListSynchronizationSecretsOperationOptions{RetryFunc: synchronizationRetryFunc()})
 		if err != nil {
 			return pointer.To(false), fmt.Errorf("retrieving synchronization secret")
 		}
@@ -143,7 +163,7 @@ func synchronizationSecretResourceUpdate(ctx context.Context, d *pluginsdk.Resou
 		}
 		return pointer.To(false), nil
 	}); err != nil {
-		return tf.ErrorDiagF(err, "Waiting for synchronization secrets for %s", servicePrincipalId)
+		return tf.ErrorDiagF(err, "Waiting for synchronization secrets for %s", id)
 	}
 
 	tf.Set(d, "credential", flattenSynchronizationSecretKeyStringValuePair(synchronizationSecrets.Value, nil))
@@ -154,30 +174,29 @@ func synchronizationSecretResourceUpdate(ctx context.Context, d *pluginsdk.Resou
 func synchronizationSecretResourceRead(ctx context.Context, d *pluginsdk.ResourceData, meta interface{}) pluginsdk.Diagnostics {
 	client := meta.(*clients.Client).Synchronization.SynchronizationSecretClient
 
-	id, err := parse.SynchronizationSecretID(d.Id())
+	id, err := stable.ParseServicePrincipalID(d.Id())
 	if err != nil {
 		return tf.ErrorDiagPathF(err, "id", "Parsing synchronization secret ID %q", d.Id())
 	}
 
-	servicePrincipalId := stable.NewServicePrincipalID(id.ServicePrincipalId)
-
-	resp, err := client.ListSynchronizationSecrets(ctx, servicePrincipalId, synchronizationsecret.ListSynchronizationSecretsOperationOptions{RetryFunc: synchronizationRetryFunc()})
+	resp, err := client.ListSynchronizationSecrets(ctx, *id, synchronizationsecret.ListSynchronizationSecretsOperationOptions{RetryFunc: synchronizationRetryFunc()})
 	if err != nil {
 		if response.WasNotFound(resp.HttpResponse) {
-			log.Printf("[DEBUG] Synchronization secrets for %s was not found - removing from state!", servicePrincipalId)
+			log.Printf("[DEBUG] Synchronization secrets for %s was not found - removing from state!", id)
 			d.SetId("")
 			return nil
 		}
-		return tf.ErrorDiagF(err, "Retrieving synchronization secrets for %s", servicePrincipalId)
+		return tf.ErrorDiagF(err, "Retrieving synchronization secrets for %s", id)
 	}
 
 	synchronizationSecrets := resp.Model
 	if synchronizationSecrets == nil {
-		log.Printf("[DEBUG] Synchronization secrets for %s was nil - removing from state!", servicePrincipalId)
+		log.Printf("[DEBUG] Synchronization secrets for %s was nil - removing from state!", id)
 		d.SetId("")
 		return nil
 	}
 
+	tf.Set(d, "service_principal_id", id.ID())
 	tf.Set(d, "credential", flattenSynchronizationSecretKeyStringValuePair(synchronizationSecrets, d.Get("credential").([]interface{})))
 
 	return nil
@@ -186,15 +205,13 @@ func synchronizationSecretResourceRead(ctx context.Context, d *pluginsdk.Resourc
 func synchronizationSecretResourceDelete(ctx context.Context, d *pluginsdk.ResourceData, meta interface{}) pluginsdk.Diagnostics {
 	client := meta.(*clients.Client).Synchronization.SynchronizationSecretClient
 
-	id, err := parse.SynchronizationSecretID(d.Id())
+	id, err := stable.ParseServicePrincipalID(d.Id())
 	if err != nil {
 		return tf.ErrorDiagPathF(err, "id", "Parsing synchronization secret with ID %q", d.Id())
 	}
 
-	servicePrincipalId := stable.NewServicePrincipalID(id.ServicePrincipalId)
-
-	tf.LockByName(servicePrincipalResourceName, servicePrincipalId.ServicePrincipalId)
-	defer tf.UnlockByName(servicePrincipalResourceName, servicePrincipalId.ServicePrincipalId)
+	tf.LockByName(servicePrincipalResourceName, id.ServicePrincipalId)
+	defer tf.UnlockByName(servicePrincipalResourceName, id.ServicePrincipalId)
 
 	// We delete secrets by setting values to empty strings
 	credentials := emptySynchronizationSecretKeyStringValuePair(d.Get("credential").([]interface{}))
@@ -202,13 +219,13 @@ func synchronizationSecretResourceDelete(ctx context.Context, d *pluginsdk.Resou
 	synchronizationSecrets := synchronizationsecret.SetSynchronizationSecretRequest{
 		Value: credentials,
 	}
-	if _, err := client.SetSynchronizationSecret(ctx, servicePrincipalId, synchronizationSecrets, synchronizationsecret.SetSynchronizationSecretOperationOptions{RetryFunc: synchronizationRetryFunc()}); err != nil {
-		return tf.ErrorDiagF(err, "Removing synchronization secrets for %s", servicePrincipalId)
+	if _, err = client.SetSynchronizationSecret(ctx, *id, synchronizationSecrets, synchronizationsecret.SetSynchronizationSecretOperationOptions{RetryFunc: synchronizationRetryFunc()}); err != nil {
+		return tf.ErrorDiagF(err, "Removing synchronization secrets for %s", id)
 	}
 
 	// Wait for synchronization secret to be deleted
 	if err := consistency.WaitForDeletion(ctx, func(ctx context.Context) (*bool, error) {
-		resp, err := client.ListSynchronizationSecrets(ctx, servicePrincipalId, synchronizationsecret.ListSynchronizationSecretsOperationOptions{RetryFunc: synchronizationRetryFunc()})
+		resp, err := client.ListSynchronizationSecrets(ctx, *id, synchronizationsecret.ListSynchronizationSecretsOperationOptions{RetryFunc: synchronizationRetryFunc()})
 		if err != nil {
 			if response.WasNotFound(resp.HttpResponse) {
 				return pointer.To(false), nil
@@ -228,7 +245,7 @@ func synchronizationSecretResourceDelete(ctx context.Context, d *pluginsdk.Resou
 
 		return pointer.To(true), nil
 	}); err != nil {
-		return tf.ErrorDiagF(err, "Waiting for deletion of synchronization secrets %s", servicePrincipalId)
+		return tf.ErrorDiagF(err, "Waiting for deletion of synchronization secrets %s", id)
 	}
 
 	return nil
